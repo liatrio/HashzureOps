@@ -1,0 +1,399 @@
+# This is a basic workflow to help you get started with Actions
+
+name: 'Deploy Terraform'
+
+# Controls when the action will run. Triggers the workflow on push or pull request
+# events but only for the main branch
+on:
+  push:
+    branches:
+      - dev
+      - staging
+      - prod
+
+env:
+  tf_version: '0.13.5'
+  tg_version: 'v0.23.31'
+  tf_working_dir: '.'
+
+
+jobs:
+  create_deployment:
+    outputs:
+      deployment_id: ${{ steps.deployment.outputs.deployment_id }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Extract branch name
+        shell: bash
+        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
+        id: extract_branch
+
+      - uses: chrnorm/deployment-action@releases/v1
+        name: Create GitHub deployment
+        id: deployment
+        with:
+          initial_status: queued
+          token: "${{ github.token }}"
+          target_url: "https://example"
+          environment: ${{ steps.extract_branch.outputs.branch }}
+
+  validate_stages:
+    needs:
+      - create_deployment
+    name: "Validate Terraform Stages"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        stages:
+          - app
+          - shared
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: lablabs/setup-tflint@v1
+        name: Setup TFLint
+        with:
+          tflint_version: v0.18.0
+
+      - name: 'Terraform Format'
+        uses: jknight-liatrio/terragrunt-github-actions@test
+        with:
+          tf_actions_version: ${{ env.tf_version }}
+          tg_actions_version: ${{ env.tg_version }}
+          tf_actions_binary: 'terraform'
+          tf_actions_subcommand: 'fmt'
+          tf_actions_working_dir: stages/${{ matrix.stages }}
+          tf_actions_comment: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: 'Tflint'
+        shell: bash
+        run: |
+          tflint -c=../.tflint.hcl
+        working-directory: stages/${{ matrix.stages }}
+
+      - name: Update deployment status (failure)
+        if: failure()
+        uses: chrnorm/deployment-status@releases/v1
+        with:
+          token: "${{ github.token }}"
+          state: "failure"
+          deployment_id: ${{ needs.create_deployment.outputs.deployment_id }}
+
+  validate_environment:
+    name: "Validate Terragrunt Environment"
+    needs:
+      - create_deployment
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Extract branch name
+        shell: bash
+        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
+        id: extract_branch
+
+      - name: 'Terraform Format Check'
+        uses: jknight-liatrio/terragrunt-github-actions@test
+        with:
+          tf_actions_version: ${{ env.tf_version }}
+          tg_actions_version: ${{ env.tg_version }}
+          tf_actions_binary: 'terraform'
+          tf_actions_subcommand: 'fmt'
+          tf_actions_working_dir: '.'
+          tf_actions_comment: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: 'Terraform Init'
+        uses: jknight-liatrio/terragrunt-github-actions@test
+        with:
+          tf_actions_version: ${{ env.tf_version }}
+          tg_actions_version: ${{ env.tg_version }}
+          tf_actions_subcommand: 'init'
+          tf_actions_working_dir: environments/${{ steps.extract_branch.outputs.branch }}
+          tf_actions_comment: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: 'Terraform Validate'
+        uses: jknight-liatrio/terragrunt-github-actions@test
+        with:
+          tf_actions_version: ${{ env.tf_version }}
+          tg_actions_version: ${{ env.tg_version }}
+          tf_actions_subcommand: 'validate'
+          tf_actions_working_dir: environments/${{ steps.extract_branch.outputs.branch }}
+          tf_actions_comment: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Update deployment status (failure)
+        if: failure()
+        uses: chrnorm/deployment-status@releases/v1
+        with:
+          token: "${{ github.token }}"
+          target_url: "https://example"
+          state: "failure"
+          deployment_id: ${{ needs.create_deployment.outputs.deployment_id }}
+
+  plan_environment:
+    name: "Terraform Plan Environment"
+    runs-on: ubuntu-latest
+    needs:
+      - create_deployment
+      - validate_environment
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Extract branch name
+        shell: bash
+        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
+        id: extract_branch
+
+      - name: "Terraform Init"
+        uses: jknight-liatrio/terragrunt-github-actions@test
+        with:
+          tf_actions_version: ${{ env.tf_version }}
+          tg_actions_version: ${{ env.tg_version }}
+          tf_actions_subcommand: 'init'
+          tf_actions_working_dir: environments/${{ steps.extract_branch.outputs.branch }}
+          tf_actions_comment: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: 'Terraform Plan'
+        uses: jknight-liatrio/terragrunt-github-actions@test
+        with:
+          tf_actions_version: ${{ env.tf_version }}
+          tg_actions_version: ${{ env.tg_version }}
+          tf_actions_subcommand: 'plan'
+          tf_actions_working_dir: environments/${{ steps.extract_branch.outputs.branch }}
+          tf_actions_comment: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Update deployment status (failure)
+        if: failure()
+        uses: chrnorm/deployment-status@releases/v1
+        with:
+          token: "${{ github.token }}"
+          target_url: "https://example"
+          state: "failure"
+          deployment_id: ${{ needs.create_deployment.outputs.deployment_id }}
+
+  apply:
+    name: "Terraform apply Environment"
+    runs-on: ubuntu-latest
+    outputs:
+      tfoutputs: ${{ steps.tfoutput.outputs.tf_actions_output }}
+      app_service_url: ${{ steps.get_url.outputs.tf_actions_output }}
+    needs:
+      - create_deployment
+      - validate_environment
+      - plan_environment
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Extract branch name
+        shell: bash
+        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
+        id: extract_branch
+
+#      - name: 'nerf Terragrunt apply'
+#        run: |
+#          echo 'would terragrunt apply for environments/${{ steps.extract_branch.outputs.branch }}'
+
+
+      - name: 'Terraform Init'
+        uses: jknight-liatrio/terragrunt-github-actions@test
+        with:
+          tf_actions_version: ${{ env.tf_version }}
+          tg_actions_version: ${{ env.tg_version }}
+          tf_actions_subcommand: 'init'
+          tf_actions_working_dir: environments/${{ steps.extract_branch.outputs.branch }}
+          tf_actions_comment: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - uses: chrnorm/deployment-status@releases/v1
+        name: Create GitHub deployment
+        id: deployment
+        with:
+          token: "${{ github.token }}"
+          target_url: "https://example"
+          state: "in_progress"
+          deployment_id: ${{ needs.create_deployment.outputs.deployment_id }}
+
+      - name: 'Terraform apply'
+        id: apply
+        uses: jknight-liatrio/terragrunt-github-actions@master
+        with:
+          tf_actions_version: ${{ env.tf_version }}
+          tg_actions_version: ${{ env.tg_version }}
+          tf_actions_subcommand: 'apply'
+          tf_actions_working_dir:  environments/${{ steps.extract_branch.outputs.branch }}
+          tf_actions_comment: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: 'Terraform output'
+        id: tfoutput
+        uses: jknight-liatrio/terragrunt-github-actions@master
+        with:
+          tf_actions_version: ${{ env.tf_version }}
+          tg_actions_version: ${{ env.tg_version }}
+          tf_actions_subcommand: 'output'
+          tf_actions_working_dir:  environments/${{ steps.extract_branch.outputs.branch }}
+          tf_actions_comment: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: 'Terraform output'
+        uses: jknight-liatrio/terragrunt-github-actions@outputmod
+        id: get_url
+        with:
+          tf_actions_version: ${{ env.tf_version }}
+          tg_actions_version: ${{ env.tg_version }}
+          tf_actions_subcommand: 'output'
+          tf_actions_output_field: 'app_service_url'
+          tf_actions_working_dir:  environments/${{ steps.extract_branch.outputs.branch }}
+          tf_actions_comment: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Update deployment status (pending)
+        uses: chrnorm/deployment-status@releases/v1
+        with:
+          token: "${{ github.token }}"
+          target_url: "https://${{ steps.get_url.outputs.tf_actions_output }}"
+          state: "pending"
+          deployment_id: ${{ needs.create_deployment.outputs.deployment_id }}
+
+      - name: Update deployment status (failure)
+        if: failure()
+        uses: chrnorm/deployment-status@releases/v1
+        with:
+          token: "${{ github.token }}"
+          target_url: "https://${{ steps.get_url.outputs.tf_actions_output }}"
+          state: "failure"
+          deployment_id: ${{ needs.create_deployment.outputs.deployment_id }}
+
+
+
+  test-env:
+    name: "Run integration tests"
+    runs-on: ubuntu-latest
+    needs:
+      - create_deployment
+      - validate_environment
+      - plan_environment
+      - apply
+    container:
+      image: hashzureopsacr.azurecr.io/liatrio/podinfo-tests:latest
+      credentials:
+        username: ${{ secrets.ARM_CLIENT_ID }}
+        password: ${{ secrets.ARM_CLIENT_SECRET }}
+    steps:
+      - continue-on-error: true
+        id: getoutput
+        run: |
+          value=$(printf '%s' '${{ needs.apply.outputs.tfoutputs }}' | grep -vi terragrunt)
+
+          echo "tf output value: ${value}"
+          echo ${value}
+          echo ::set-output name=tfoutput::${value}
+
+      - continue-on-error: false
+        id: geturl
+        run: |
+
+          echo "::set-output name=app_service_url::${{ fromJSON(steps.getoutput.outputs.tfoutput).app_service_url.value }}"
+
+
+      - name: Run integration tests
+        continue-on-error: true
+        run: |
+          cd /usr/src/app
+          mvn test -Dcucumber.options="--tags @MyTags" -Dserver_url="https://${{ steps.geturl.outputs.app_service_url }}"
+
+      - name: Update deployment status (success)
+        if: success()
+        uses: chrnorm/deployment-status@releases/v1
+        with:
+          token: "${{ github.token }}"
+          target_url: "https://${{ needs.apply.outputs.app_service_url }}"
+          state: "success"
+          deployment_id: ${{ needs.create_deployment.outputs.deployment_id }}
+
+      - name: Update deployment status (failure)
+        if: failure()
+        uses: chrnorm/deployment-status@releases/v1
+        with:
+          token: "${{ github.token }}"
+          target_url: "https://${{ needs.apply.outputs.app_service_url }}"
+          state: "failure"
+          deployment_id: ${{ needs.create_deployment.outputs.deployment_id }}
+
+
+  deploy_success:
+    needs:
+      - create_deployment
+      - apply
+      - test-env
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update deployment status (success)
+        uses: chrnorm/deployment-status@releases/v1
+        with:
+          token: "${{ github.token }}"
+          target_url: "https://${{ needs.apply.outputs.app_service_url }}"
+          state: "success"
+          deployment_id: ${{ needs.create_deployment.outputs.deployment_id }}
+

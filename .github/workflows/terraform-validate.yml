@@ -1,0 +1,157 @@
+# This is a basic workflow to help you get started with Actions
+
+name: 'Validate Terraform'
+
+# Controls when the action will run. Triggers the workflow on push or pull request
+# events but only for the main branch
+on:
+  push:
+    branches-ignore:
+      - dev
+      - staging
+      - prod
+  pull_request:
+    branches:
+      - dev
+      - staging
+      - prod
+
+env:
+  tf_version: '0.13.5'
+  tg_version: 'v0.23.31'
+  tf_working_dir: '.'
+
+jobs:
+
+  validate_stages:
+    name: "Validate Terraform"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        stages:
+          - app
+          - shared
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: lablabs/setup-tflint@v1
+        name: Setup TFLint
+        with:
+          tflint_version: v0.18.0
+
+      - name: 'Terraform Format'
+        uses: jknight-liatrio/terragrunt-github-actions@test
+        with:
+          tf_actions_version: ${{ env.tf_version }}
+          tg_actions_version: ${{ env.tg_version }}
+          tf_actions_binary: 'terraform'
+          tf_actions_subcommand: 'fmt'
+          tf_actions_working_dir: stages/${{ matrix.stages }}
+          tf_actions_comment: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: 'Tflint'
+        shell: bash
+        run: |
+          tflint -c=../.tflint.hcl
+        working-directory: stages/${{ matrix.stages }}
+
+
+
+  validate_environments:
+    name: "Terraform Validate Environment"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment:
+          - dev
+          - staging
+          - prod
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: 'Terraform Init'
+        uses: jknight-liatrio/terragrunt-github-actions@test
+        with:
+          tf_actions_version: ${{ env.tf_version }}
+          tg_actions_version: ${{ env.tg_version }}
+          tf_actions_subcommand: 'init'
+          tf_actions_working_dir: environments/${{ matrix.environment }}
+          tf_actions_comment: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: 'Terraform Validate'
+        uses: jknight-liatrio/terragrunt-github-actions@test
+        with:
+          tf_actions_version: ${{ env.tf_version }}
+          tg_actions_version: ${{ env.tg_version }}
+          tf_actions_subcommand: 'validate'
+          tf_actions_working_dir: environments/${{ matrix.environment }}
+          tf_actions_comment: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+  plan_environments:
+    name: "Terraform Plan Environment"
+    runs-on: ubuntu-latest
+    needs:
+      - validate_environments
+    strategy:
+      fail-fast: false
+      matrix:
+        environment:
+          - dev
+          - staging
+          - prod
+
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: 'Terraform Init'
+        uses: jknight-liatrio/terragrunt-github-actions@test
+        with:
+          tf_actions_version: ${{ env.tf_version }}
+          tg_actions_version: ${{ env.tg_version }}
+          tf_actions_subcommand: 'init'
+          tf_actions_working_dir: environments/${{ matrix.environment }}
+          tf_actions_comment: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: 'Terraform Plan'
+        uses: jknight-liatrio/terragrunt-github-actions@test
+        with:
+          tf_actions_version: ${{ env.tf_version }}
+          tg_actions_version: ${{ env.tg_version }}
+          tf_actions_subcommand: 'plan'
+          tf_actions_working_dir: environments/${{ matrix.environment }}
+          tf_actions_comment: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
