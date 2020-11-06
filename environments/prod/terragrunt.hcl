@@ -20,6 +20,7 @@ remote_state {
 inputs = {
   rg_name = "hashzureops-prod"
   app_service_name = "hashzureops-podinfo"
+  app_service_plan_size =  "S3"
   acr_user = get_env("ARM_CLIENT_ID", "foo")
   acr_password = get_env("ARM_CLIENT_SECRET", "bar")
 }
