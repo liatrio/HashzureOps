@@ -3,7 +3,7 @@ terraform {
 }
 
 provider "azurerm" {
-  version = ">= 2.14.0"
+  version = ">= 2.35.0"
   features {}
 }
 
@@ -42,6 +42,7 @@ resource "azurerm_app_service" "web_apps" {
   site_config {
     linux_fx_version = "DOCKER|${var.docker_registry_url}/${var.app_image}:${var.image_version}"
     always_on        = "true"
+    scm_type = "None"
   }
 
   app_settings = {
