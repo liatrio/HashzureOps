@@ -262,7 +262,7 @@ jobs:
 
       - name: 'Terraform apply'
         id: apply
-        uses: jknight-liatrio/terragrunt-github-actions@master
+        uses: jknight-liatrio/terragrunt-github-actions@test
         with:
           tf_actions_version: ${{ env.tf_version }}
           tg_actions_version: ${{ env.tg_version }}
