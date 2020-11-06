@@ -1,6 +1,7 @@
 .idea
 
 .env
+.helpers
 
 
 **/.terragrunt-cache

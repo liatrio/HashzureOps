@@ -29,5 +29,5 @@ inputs = {
     app_service_plan_tier =  "Standard"
     app_service_plan_size =  "S1"
     docker_registry_url = "hashzureopsacr.azurecr.io"
-    image_version = "0.0.3"
+    image_version = "0.0.2"
 }
