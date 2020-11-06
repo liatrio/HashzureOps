@@ -2,6 +2,7 @@
 
 .env
 .helpers
+*.swp
 
 
 **/.terragrunt-cache
