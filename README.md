@@ -1,8 +1,5 @@
 # HashzureOps
 
-![Validate Terraform](https://github.com/liatrio/HashzureOps/workflows/Validate%20Terraform/badge.svg)
-![Deploy Terraform](https://github.com/liatrio/HashzureOps/workflows/Deploy%20Terraform/badge.svg)
-
 This repository contains the demo code used during Liatrio's visit on HashiCorp Live.
 
 ## Overview
