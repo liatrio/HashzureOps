@@ -29,6 +29,7 @@ The following tools must be available for this to run:
 
 --- 
 
+```
 ## Repository Structure
 
 ├── bootstrap  
@@ -46,6 +47,7 @@ The following tools must be available for this to run:
 └── stages  
     ├── app  
     └── shared  
+```
 
 ### Stages - Terraform
 
